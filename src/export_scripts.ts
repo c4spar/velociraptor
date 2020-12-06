@@ -18,7 +18,7 @@ export async function exportScripts(
   configData: ConfigData | null,
   scripts: string[],
   outDir: string = "bin",
-) {
+): Promise<void> {
   validateConfigData(configData);
   const { cwd, config } = configData as ConfigData;
   const outDirPath = path.isAbsolute(outDir) ? outDir : path.join(cwd, outDir);
@@ -32,7 +32,7 @@ export async function exportScripts(
       const scriptDef = config.scripts[script];
       const { scripts, ...rootConfig } = config;
       const commands = normalizeScript(scriptDef, rootConfig);
-      const content = generateExecutableFile(commands);
+      const content = await generateExecutableFile(commands);
       if (content) {
         const filePath = path.join(outDirPath, script);
         if (
@@ -48,37 +48,42 @@ export async function exportScripts(
   );
 }
 
-function generateExecutableFile(commands: CompoundCommandItem[]) {
+async function generateExecutableFile(
+  commands: CompoundCommandItem[],
+): Promise<string> {
   if (isWindows) {
     log.warning("Scripts exporting only supports sh.");
   }
   return `#!/bin/sh
 # ${VR_MARK}
 
-${exportCommands(commands)}
+${await exportCommands(commands)}
 `;
 }
 
-function exportCommands(commands: CompoundCommandItem[]): string {
-  const _exportCommands = (
+function exportCommands(commands: CompoundCommandItem[]): Promise<string> {
+  const _exportCommands = async (
     commands: OneOrMore<CompoundCommandItem>,
     doGroup: boolean = false,
-  ): string => {
+  ): Promise<string> => {
     if (!commands) return "";
     if (Array.isArray(commands)) {
-      let res = commands.map((c) => _exportCommands(c, commands.length > 1))
-        .join(" && ");
+      const result = await Promise.all(
+        commands.map((c) => _exportCommands(c, commands.length > 1)),
+      );
+      let res = result.join(" && ");
       if (doGroup) res = `( ${res} )`;
       return res;
     } else {
       if (isParallel(commands)) {
-        return `( ${
-          commands.pll.map((c) => _exportCommands(c, true)).join(" & ")
-        }; wait )`;
+        const res = await Promise.all(
+          commands.pll.map((c) => _exportCommands(c, true)),
+        );
+        return `( ${res.join(" & ")}; wait )`;
       }
       const cmd = commands;
       let res = "";
-      const envVars: EnvironmentVariables | undefined = getEnvVars(cmd);
+      const envVars: EnvironmentVariables | undefined = await getEnvVars(cmd);
       if (envVars) {
         res += Object.entries(envVars)
           .map(([key, val]) => `${key}="${escape(val, '"')}"`)

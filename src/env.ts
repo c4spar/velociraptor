@@ -1,13 +1,16 @@
+import { readLines } from "../deps.ts";
 import { Command } from "./command.ts";
 import { log } from "./logger.ts";
 import { EnvironmentVariables } from "./scripts_config.ts";
 
 const envCache: Record<string, EnvironmentVariables> = {};
 
-export function getEnvVars(cmd: Command): EnvironmentVariables | undefined {
+export async function getEnvVars(
+  cmd: Command,
+): Promise<EnvironmentVariables | undefined> {
   const envVars: EnvironmentVariables = {};
   if (cmd.env_file) {
-    Object.assign(envVars, parseEnvFile(cmd.env_file));
+    Object.assign(envVars, await parseEnvFile(cmd.env_file));
   }
   if (cmd.env && Object.entries(cmd.env).length > 0) {
     Object.assign(envVars, stringifyEnv(cmd.env));
@@ -17,33 +20,32 @@ export function getEnvVars(cmd: Command): EnvironmentVariables | undefined {
   }
 }
 
-function parseEnvFile(envFile: string): EnvironmentVariables {
+async function parseEnvFile(envFile: string): Promise<EnvironmentVariables> {
   if (envCache[envFile]) {
     return envCache[envFile];
   }
   try {
-    const buffer: Uint8Array = Deno.readFileSync(envFile);
-    return envCache[envFile] = new TextDecoder()
-      .decode(buffer)
-      .trim()
-      .split(/\n+/g)
-      .map((val: string) => val.trim())
-      .filter((val: string) => val[0] !== "#")
-      .reduce((env: EnvironmentVariables, line: string) => {
-        const [name, value] = line
-          .replace(/^export\s+/, "")
-          .split("=", 2)
-          .map((val: string) => val.trim());
-        env[name] = stripeQuotes(value);
-        return env;
-      }, {});
+    const envVars: Record<string, string> = {};
+    const fileReader = await Deno.open(envFile);
+    for await (let line of readLines(fileReader)) {
+      line = line.trim();
+      if (!line || line[0] === "#") {
+        continue;
+      }
+      const [name, value] = line
+        .replace(/^export\s+/, "")
+        .split("=", 2)
+        .map((val: string) => val.trim());
+      envVars[name] = stripeQuotes(value);
+    }
+    return envVars;
   } catch (error) {
     if (error instanceof Deno.errors.NotFound) {
       log.error(`env_file not found: ${envFile}`);
     } else {
-      log.error(`Failed to parse env_file: ${envFile}`);
+      log.error(`Failed to parse env_file: ${envFile}\n${error.stack}`);
     }
-    Deno.exit(1);
+    throw error;
   }
 }
 

@@ -1,7 +1,6 @@
 import { getEnvVars } from "./env.ts";
 import { escape, isWindows, OneOrMore } from "./util.ts";
 import { log } from "./logger.ts";
-import { EnvironmentVariables } from "./scripts_config.ts";
 import {
   Command,
   CompoundCommandItem,
@@ -51,7 +50,7 @@ async function runCommand(
   let runOptions: Deno.RunOptions = {
     cmd: [shell, ...buildShellArgs(shell, cmd, additionalArgs)],
     cwd,
-    env: getEnvVars(command),
+    env: await getEnvVars(command),
   };
   log.info(
     `Running > ${cmd}${

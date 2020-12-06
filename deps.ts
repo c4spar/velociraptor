@@ -20,3 +20,4 @@ export {
   CompletionsCommand,
   StringType,
 } from "https://deno.land/x/cliffy@v0.15.0/command/mod.ts";
+export { readLines } from "https://deno.land/std@0.75.0/io/mod.ts";
